@@ -1,4 +1,4 @@
-# Cloudflare sync API URL (see README for setup)
+// Copy to config.js and set your Worker URL after deploying worker/
 window.SYNC_CONFIG = {
-  apiUrl: 'https://drama-track-sync.oscar-802.workers.dev',
+  apiUrl: 'https://drama-track-sync.YOUR_SUBDOMAIN.workers.dev',
 };
