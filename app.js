@@ -258,6 +258,9 @@ function openModal(drama = null) {
   document.getElementById('drama-total').value = drama?.totalEpisodes || '';
   document.getElementById('drama-status').value = drama?.status || 'watching';
   document.getElementById('drama-notes').value = drama?.notes || '';
+  Lookup.selectedMeta = drama?.metaId ? { id: drama.metaId, source: drama.metaSource } : null;
+  Lookup.clear(document.getElementById('lookup-results'));
+  updateLookupHint();
   I18n.applyStatic();
   modal.showModal();
   document.getElementById('drama-title').focus();
@@ -266,6 +269,52 @@ function openModal(drama = null) {
 function closeModal() {
   modal.close();
   form.reset();
+  Lookup.clear(document.getElementById('lookup-results'));
+}
+
+function updateLookupHint() {
+  const hint = document.getElementById('lookup-hint');
+  const btn = document.getElementById('lookup-btn');
+  if (!Lookup.isAvailable()) {
+    hint.textContent = t('lookup.unavailable');
+    btn.disabled = true;
+  } else {
+    hint.textContent = t('lookup.hint');
+    btn.disabled = false;
+  }
+}
+
+function applyLookupResult(result) {
+  document.getElementById('drama-title').value = result.title;
+  if (result.totalEpisodes) {
+    document.getElementById('drama-total').value = result.totalEpisodes;
+  }
+  if (result.suggestedStatus) {
+    document.getElementById('drama-status').value = result.suggestedStatus;
+    I18n.applyStatic();
+  } else if (result.airing && !result.totalEpisodes) {
+    document.getElementById('drama-status').value = 'watching';
+    I18n.applyStatic();
+  }
+  Lookup.selectedMeta = { id: result.id, source: result.source };
+  Lookup.clear(document.getElementById('lookup-results'));
+}
+
+async function runLookup() {
+  const titleInput = document.getElementById('drama-title');
+  const resultsEl = document.getElementById('lookup-results');
+  const query = titleInput.value.trim();
+  if (query.length < 2) return;
+
+  resultsEl.innerHTML = `<p class="lookup-empty">${t('lookup.searching')}</p>`;
+  resultsEl.classList.remove('hidden');
+
+  try {
+    const results = await Lookup.search(query);
+    Lookup.renderResults(resultsEl, results, applyLookupResult);
+  } catch {
+    resultsEl.innerHTML = `<p class="lookup-empty">${t('lookup.noResults')}</p>`;
+  }
 }
 
 function saveDrama(e) {
@@ -281,6 +330,16 @@ function saveDrama(e) {
 
   if (!title) return;
 
+  let metaSource = Lookup.selectedMeta?.source || null;
+  let metaId = Lookup.selectedMeta?.id || null;
+  if (id && !metaSource) {
+    const existing = dramas.find((d) => d.id === id);
+    if (existing) {
+      metaSource = existing.metaSource || null;
+      metaId = existing.metaId || null;
+    }
+  }
+
   const data = {
     title,
     currentEpisode,
@@ -288,6 +347,8 @@ function saveDrama(e) {
     status,
     notes,
     updatedAt: Date.now(),
+    metaSource,
+    metaId,
   };
 
   if (id) {
@@ -389,6 +450,7 @@ function importData(file) {
 function onLangChange() {
   I18n.applyStatic();
   updateSyncUI(SyncManager.status, SyncManager.messageKey, SyncManager.messageParams);
+  updateLookupHint();
   syncSortTabsUI();
   render();
 }
@@ -401,6 +463,17 @@ function syncSortTabsUI() {
 
 document.getElementById('lang-toggle').addEventListener('click', () => I18n.toggleLang());
 I18n.onChange(onLangChange);
+
+document.getElementById('lookup-btn').addEventListener('click', runLookup);
+
+document.getElementById('drama-title').addEventListener('input', () => {
+  clearTimeout(Lookup.debounceTimer);
+  Lookup.debounceTimer = setTimeout(() => {
+    const q = document.getElementById('drama-title').value.trim();
+    if (q.length >= 2) runLookup();
+    else Lookup.clear(document.getElementById('lookup-results'));
+  }, 600);
+});
 
 document.getElementById('add-btn').addEventListener('click', () => openModal());
 document.getElementById('empty-add-btn').addEventListener('click', () => openModal());

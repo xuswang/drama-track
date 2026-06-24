@@ -68,8 +68,14 @@
 
       <label>
         <span data-i18n="form.title">Title</span> <span class="required">*</span>
-        <input type="text" id="drama-title" required data-i18n-placeholder="form.titlePlaceholder" placeholder="e.g. Solo Leveling Season 2" maxlength="100">
+        <input type="text" id="drama-title" required data-i18n-placeholder="form.titlePlaceholder" placeholder="e.g. Solo Leveling Season 2" maxlength="100" autocomplete="off">
       </label>
+
+      <div class="lookup-section">
+        <button type="button" class="btn btn-ghost lookup-btn" id="lookup-btn" data-i18n="lookup.search">Look up episodes</button>
+        <div class="lookup-results hidden" id="lookup-results"></div>
+        <p class="lookup-hint" id="lookup-hint" data-i18n="lookup.hint">Search Bangumi & AniList for episode counts (great for donghua)</p>
+      </div>
 
       <div class="form-row">
         <label>
@@ -132,6 +138,7 @@
 
   <script src="config.js"></script>
   <script src="i18n.js"></script>
+  <script src="lookup.js"></script>
   <script src="sync.js"></script>
   <script src="app.js"></script>
 </body>
