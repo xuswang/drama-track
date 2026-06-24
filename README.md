@@ -24,7 +24,7 @@ Open https://drama-track.pages.dev, tap **Sync**, and set a passphrase. Use the 
 ### Run locally
 
 ```bash
-git clone https://github.com/YOUR_USERNAME/drama-track.git
+git clone https://github.com/xuswang/drama-track.git
 cd drama-track
 python3 -m http.server 8080
 ```
@@ -64,11 +64,23 @@ window.SYNC_CONFIG = {
 
 ### 3. Deploy to Cloudflare Pages
 
-Push to GitHub and connect the repo in Cloudflare **Workers & Pages → Create → Pages**, or deploy manually:
+**Option A — Connect GitHub (recommended):**
+
+1. Open [Cloudflare Pages](https://dash.cloudflare.com/?to=/:account/workers-and-pages)
+2. Select **drama-track** → **Settings** → **Builds & deployments**
+3. Connect **GitHub** → choose `xuswang/drama-track` → branch `main`
+4. Build command: leave empty · Output directory: `/`
+5. Every push to `main` deploys automatically
+
+**Option B — Manual deploy:**
 
 ```bash
 wrangler pages deploy . --project-name=drama-track
 ```
+
+**Option C — GitHub Actions:**
+
+Add repository secrets `CLOUDFLARE_API_TOKEN` and `CLOUDFLARE_ACCOUNT_ID` (account ID is already set). The workflow in `.github/workflows/deploy.yml` will deploy on push.
 
 ## Language
 
