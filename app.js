@@ -43,6 +43,7 @@ function migrateDrama(drama) {
   delete d.totalEpisodes;
   delete d.metaId;
   delete d.metaSource;
+  if (d.episodeUpdatedAt == null) d.episodeUpdatedAt = d.updatedAt || 0;
   if (d.status === 'completed') d.archived = true;
   else if (d.archived === undefined) d.archived = false;
   else if (d.status !== 'completed') d.archived = false;
@@ -76,7 +77,7 @@ function scheduleSync() {
 async function performSync() {
   const merged = await SyncManager.sync(dramas);
   if (merged !== dramas) {
-    dramas = merged;
+    dramas = merged.map(migrateDrama);
     localStorage.setItem(STORAGE_KEY, JSON.stringify(dramas));
     render();
   }
@@ -183,7 +184,7 @@ function getFilteredDramas() {
       if (currentSort === 'alpha') {
         return a.title.localeCompare(b.title, locale, { sensitivity: 'base' });
       }
-      return (b.updatedAt || 0) - (a.updatedAt || 0);
+      return (b.episodeUpdatedAt || 0) - (a.episodeUpdatedAt || 0);
     });
 }
 
@@ -301,18 +302,26 @@ function saveDrama(e) {
 
   if (!title) return;
 
+  const now = Date.now();
   const data = {
     title,
     currentEpisode,
     status,
     notes,
-    updatedAt: Date.now(),
+    updatedAt: now,
   };
 
   if (id) {
     const idx = dramas.findIndex((d) => d.id === id);
-    if (idx !== -1) dramas[idx] = applyArchiveRules({ ...dramas[idx], ...data });
+    if (idx !== -1) {
+      const existing = dramas[idx];
+      data.episodeUpdatedAt = existing.currentEpisode !== currentEpisode
+        ? now
+        : (existing.episodeUpdatedAt || existing.updatedAt || 0);
+      dramas[idx] = applyArchiveRules({ ...existing, ...data });
+    }
   } else {
+    data.episodeUpdatedAt = currentEpisode > 0 ? now : 0;
     dramas.push(applyArchiveRules({ id: generateId(), ...data }));
   }
 
@@ -326,8 +335,12 @@ function changeEpisode(id, delta) {
   if (!drama) return;
 
   const next = Math.max(0, drama.currentEpisode + delta);
+  if (next === drama.currentEpisode) return;
+
   drama.currentEpisode = next;
-  drama.updatedAt = Date.now();
+  const now = Date.now();
+  drama.updatedAt = now;
+  drama.episodeUpdatedAt = now;
 
   saveData();
   render();
@@ -382,6 +395,7 @@ function importData(file) {
           status: d.status || 'watching',
           notes: d.notes || '',
           updatedAt: d.updatedAt || Date.now(),
+          episodeUpdatedAt: d.episodeUpdatedAt ?? d.updatedAt ?? 0,
         }));
       } else {
         const existingIds = new Set(dramas.map((d) => d.id));
@@ -393,6 +407,7 @@ function importData(file) {
             status: d.status || 'watching',
             notes: d.notes || '',
             updatedAt: d.updatedAt || Date.now(),
+            episodeUpdatedAt: d.episodeUpdatedAt ?? d.updatedAt ?? 0,
           }));
         });
       }
