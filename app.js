@@ -7,7 +7,6 @@ let currentSort = loadSort();
 let searchQuery = '';
 let syncDebounceTimer = null;
 let lastSyncTime = null;
-let isRefreshingEpisodes = false;
 
 const dramaListEl = document.getElementById('drama-list');
 const emptyStateEl = document.getElementById('empty-state');
@@ -41,6 +40,9 @@ function loadData() {
 
 function migrateDrama(drama) {
   const d = { ...drama };
+  delete d.totalEpisodes;
+  delete d.metaId;
+  delete d.metaSource;
   if (d.status === 'completed') d.archived = true;
   else if (d.archived === undefined) d.archived = false;
   else if (d.status !== 'completed') d.archived = false;
@@ -133,62 +135,12 @@ async function saveSyncSettings(e) {
   await performSync();
 }
 
-function setRefreshStatus(message) {
-  syncStatusEl.textContent = message;
-  syncDotEl.className = 'sync-dot syncing';
-}
-
-async function refreshAllEpisodeCounts() {
-  if (!dramas.length || isRefreshingEpisodes) return;
-  isRefreshingEpisodes = true;
-
-  const needsRefresh = dramas.filter((d) => !d.totalEpisodes);
-  const queue = needsRefresh.length ? needsRefresh : dramas;
-  let changed = 0;
-  let pendingSave = false;
-
-  for (let i = 0; i < queue.length; i++) {
-    const drama = queue[i];
-    setRefreshStatus(t('lookup.refreshProgress', { current: i + 1, total: queue.length }));
-
-    try {
-      if (await Lookup.refreshDrama(drama)) {
-        changed++;
-        pendingSave = true;
-        render();
-      }
-    } catch {
-      /* skip failed lookup */
-    }
-
-    if (pendingSave && (changed % 5 === 0 || i === queue.length - 1)) {
-      localStorage.setItem(STORAGE_KEY, JSON.stringify(dramas));
-      scheduleSync();
-      pendingSave = false;
-    }
-
-    await Lookup.delay(350);
-  }
-
-  if (pendingSave) {
-    localStorage.setItem(STORAGE_KEY, JSON.stringify(dramas));
-    scheduleSync();
-  }
-
-  setRefreshStatus(changed > 0
-    ? t('lookup.refreshDone', { count: changed })
-    : t('lookup.refreshNone'));
-
-  syncDotEl.className = 'sync-dot synced';
-  isRefreshingEpisodes = false;
-}
-
 async function initApp() {
   I18n.init();
 
   SyncManager.onStatusChange((status, messageKey, params) => {
     if (status === 'synced') lastSyncTime = new Date();
-    if (!isRefreshingEpisodes) updateSyncUI(status, messageKey, params);
+    updateSyncUI(status, messageKey, params);
   });
 
   if (SyncManager.isConfigured() && SyncManager.hasSyncCode()) {
@@ -208,7 +160,6 @@ async function initApp() {
     localStorage.setItem(STORAGE_KEY, JSON.stringify(dramas));
     render();
   }
-  refreshAllEpisodeCounts();
 }
 
 function generateId() {
@@ -236,47 +187,7 @@ function getFilteredDramas() {
     });
 }
 
-function calcProgress(drama) {
-  if (!drama.totalEpisodes || drama.totalEpisodes <= 0) return null;
-  return Math.min(100, Math.round((drama.currentEpisode / drama.totalEpisodes) * 100));
-}
-
-function renderStats() {
-  const active = dramas.filter(isActive);
-  const watching = active.filter((d) => d.status === 'watching').length;
-  const archived = dramas.filter((d) => d.archived).length;
-  const totalEpisodes = dramas.reduce((sum, d) => sum + (d.currentEpisode || 0), 0);
-
-  statsEl.innerHTML = `
-    <div class="stat-card">
-      <div class="value">${active.length}</div>
-      <div class="label">${t('stats.total')}</div>
-    </div>
-    <div class="stat-card">
-      <div class="value">${watching}</div>
-      <div class="label">${t('stats.watching')}</div>
-    </div>
-    <div class="stat-card">
-      <div class="value">${archived}</div>
-      <div class="label">${t('stats.archived')}</div>
-    </div>
-    <div class="stat-card">
-      <div class="value">${totalEpisodes}</div>
-      <div class="label">${t('stats.episodes')}</div>
-    </div>
-  `;
-}
-
 function renderDramaCard(drama) {
-  const progress = calcProgress(drama);
-  const totalDisplay = drama.totalEpisodes ? drama.totalEpisodes : '?';
-
-  const progressBar = progress !== null
-    ? `<div class="progress-bar"><div class="progress-fill" style="width:${progress}%"></div></div>`
-    : `<div class="progress-bar"><div class="progress-fill" style="width:0%"></div></div>`;
-
-  const progressPercent = progress !== null ? `<span class="progress-percent">${progress}%</span>` : '';
-
   const notes = drama.notes
     ? `<div class="drama-notes">${escapeHtml(drama.notes)}</div>`
     : '';
@@ -296,15 +207,8 @@ function renderDramaCard(drama) {
         <h3 class="drama-title">${escapeHtml(drama.title)}</h3>
         <span class="drama-status-badge status-${drama.status}">${t(`status.${drama.status}`)}</span>
       </div>
-      <div class="progress-section">
-        <div class="progress-info">
-          <span class="progress-episode">
-            ${t('card.ep')} <span class="current">${drama.currentEpisode}</span>
-            <span class="separator">/</span> ${totalDisplay} ${t('card.episodes')}
-          </span>
-          ${progressPercent}
-        </div>
-        ${progressBar}
+      <div class="episode-section">
+        <span class="episode-count">${t('card.episodeCount', { n: drama.currentEpisode })}</span>
       </div>
       ${notes}
       <div class="drama-actions">
@@ -313,6 +217,32 @@ function renderDramaCard(drama) {
         <button class="btn-icon danger" data-action="delete" title="${t('card.delete')}">✕</button>
       </div>
     </article>
+  `;
+}
+
+function renderStats() {
+  const active = dramas.filter(isActive);
+  const watching = active.filter((d) => d.status === 'watching').length;
+  const archived = dramas.filter((d) => d.archived).length;
+  const episodesWatched = dramas.reduce((sum, d) => sum + (d.currentEpisode || 0), 0);
+
+  statsEl.innerHTML = `
+    <div class="stat-card">
+      <div class="value">${active.length}</div>
+      <div class="label">${t('stats.total')}</div>
+    </div>
+    <div class="stat-card">
+      <div class="value">${watching}</div>
+      <div class="label">${t('stats.watching')}</div>
+    </div>
+    <div class="stat-card">
+      <div class="value">${archived}</div>
+      <div class="label">${t('stats.archived')}</div>
+    </div>
+    <div class="stat-card">
+      <div class="value">${episodesWatched}</div>
+      <div class="label">${t('stats.episodes')}</div>
+    </div>
   `;
 }
 
@@ -348,12 +278,8 @@ function openModal(drama = null) {
   document.getElementById('drama-id').value = drama?.id || '';
   document.getElementById('drama-title').value = drama?.title || '';
   document.getElementById('drama-current').value = drama?.currentEpisode ?? 0;
-  document.getElementById('drama-total').value = drama?.totalEpisodes || '';
   document.getElementById('drama-status').value = drama?.status || 'watching';
   document.getElementById('drama-notes').value = drama?.notes || '';
-  Lookup.selectedMeta = drama?.metaId ? { id: drama.metaId, source: drama.metaSource } : null;
-  Lookup.clear(document.getElementById('lookup-results'));
-  updateLookupHint();
   I18n.applyStatic();
   modal.showModal();
   document.getElementById('drama-title').focus();
@@ -362,47 +288,6 @@ function openModal(drama = null) {
 function closeModal() {
   modal.close();
   form.reset();
-  Lookup.clear(document.getElementById('lookup-results'));
-}
-
-function updateLookupHint() {
-  const hint = document.getElementById('lookup-hint');
-  const btn = document.getElementById('lookup-btn');
-  hint.textContent = t('lookup.hint');
-  btn.disabled = false;
-}
-
-function applyLookupResult(result) {
-  document.getElementById('drama-title').value = result.title;
-  if (result.totalEpisodes) {
-    document.getElementById('drama-total').value = result.totalEpisodes;
-  }
-  if (result.suggestedStatus) {
-    document.getElementById('drama-status').value = result.suggestedStatus;
-    I18n.applyStatic();
-  } else if (result.airing && !result.totalEpisodes) {
-    document.getElementById('drama-status').value = 'watching';
-    I18n.applyStatic();
-  }
-  Lookup.selectedMeta = { id: result.id, source: result.source };
-  Lookup.clear(document.getElementById('lookup-results'));
-}
-
-async function runLookup() {
-  const titleInput = document.getElementById('drama-title');
-  const resultsEl = document.getElementById('lookup-results');
-  const query = titleInput.value.trim();
-  if (query.length < 2) return;
-
-  resultsEl.innerHTML = `<p class="lookup-empty">${t('lookup.searching')}</p>`;
-  resultsEl.classList.remove('hidden');
-
-  try {
-    const results = await Lookup.search(query);
-    Lookup.renderResults(resultsEl, results, applyLookupResult);
-  } catch {
-    resultsEl.innerHTML = `<p class="lookup-empty">${t('lookup.noResults')}</p>`;
-  }
 }
 
 function saveDrama(e) {
@@ -411,32 +296,17 @@ function saveDrama(e) {
   const id = document.getElementById('drama-id').value;
   const title = document.getElementById('drama-title').value.trim();
   const currentEpisode = parseInt(document.getElementById('drama-current').value, 10) || 0;
-  const totalRaw = document.getElementById('drama-total').value;
-  const totalEpisodes = totalRaw ? parseInt(totalRaw, 10) : null;
   const status = document.getElementById('drama-status').value;
   const notes = document.getElementById('drama-notes').value.trim();
 
   if (!title) return;
 
-  let metaSource = Lookup.selectedMeta?.source || null;
-  let metaId = Lookup.selectedMeta?.id || null;
-  if (id && !metaSource) {
-    const existing = dramas.find((d) => d.id === id);
-    if (existing) {
-      metaSource = existing.metaSource || null;
-      metaId = existing.metaId || null;
-    }
-  }
-
   const data = {
     title,
     currentEpisode,
-    totalEpisodes,
     status,
     notes,
     updatedAt: Date.now(),
-    metaSource,
-    metaId,
   };
 
   if (id) {
@@ -456,15 +326,8 @@ function changeEpisode(id, delta) {
   if (!drama) return;
 
   const next = Math.max(0, drama.currentEpisode + delta);
-  if (drama.totalEpisodes && next > drama.totalEpisodes) return;
-
   drama.currentEpisode = next;
   drama.updatedAt = Date.now();
-
-  if (drama.totalEpisodes && next >= drama.totalEpisodes) {
-    drama.status = 'completed';
-    applyArchiveRules(drama);
-  }
 
   saveData();
   render();
@@ -516,12 +379,9 @@ function importData(file) {
           id: d.id || generateId(),
           title: d.title,
           currentEpisode: d.currentEpisode,
-          totalEpisodes: d.totalEpisodes || null,
           status: d.status || 'watching',
           notes: d.notes || '',
           updatedAt: d.updatedAt || Date.now(),
-          metaSource: d.metaSource || null,
-          metaId: d.metaId || null,
         }));
       } else {
         const existingIds = new Set(dramas.map((d) => d.id));
@@ -530,12 +390,9 @@ function importData(file) {
             id: d.id && !existingIds.has(d.id) ? d.id : generateId(),
             title: d.title,
             currentEpisode: d.currentEpisode,
-            totalEpisodes: d.totalEpisodes || null,
             status: d.status || 'watching',
             notes: d.notes || '',
             updatedAt: d.updatedAt || Date.now(),
-            metaSource: d.metaSource || null,
-            metaId: d.metaId || null,
           }));
         });
       }
@@ -554,7 +411,6 @@ function importData(file) {
 function onLangChange() {
   I18n.applyStatic();
   updateSyncUI(SyncManager.status, SyncManager.messageKey, SyncManager.messageParams);
-  updateLookupHint();
   syncSortTabsUI();
   render();
 }
@@ -568,23 +424,11 @@ function syncSortTabsUI() {
 document.getElementById('lang-toggle').addEventListener('click', () => I18n.toggleLang());
 I18n.onChange(onLangChange);
 
-document.getElementById('lookup-btn').addEventListener('click', runLookup);
-
-document.getElementById('drama-title').addEventListener('input', () => {
-  clearTimeout(Lookup.debounceTimer);
-  Lookup.debounceTimer = setTimeout(() => {
-    const q = document.getElementById('drama-title').value.trim();
-    if (q.length >= 2) runLookup();
-    else Lookup.clear(document.getElementById('lookup-results'));
-  }, 600);
-});
-
 document.getElementById('add-btn').addEventListener('click', () => openModal());
 document.getElementById('empty-add-btn').addEventListener('click', () => openModal());
 document.getElementById('cancel-btn').addEventListener('click', closeModal);
 form.addEventListener('submit', saveDrama);
 
-document.getElementById('refresh-eps-btn').addEventListener('click', () => refreshAllEpisodeCounts());
 document.getElementById('export-btn').addEventListener('click', exportData);
 document.getElementById('import-btn').addEventListener('click', () => {
   document.getElementById('import-file').click();

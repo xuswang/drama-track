@@ -44,7 +44,6 @@
         <button class="tab" data-sort="alpha" data-i18n="sort.alpha">A–Z</button>
       </div>
       <div class="toolbar-actions">
-        <button class="btn btn-ghost" id="refresh-eps-btn" data-i18n="action.refreshEps">Refresh episodes</button>
         <button class="btn btn-ghost" id="export-btn" data-i18n="action.export">Export</button>
         <button class="btn btn-ghost" id="import-btn" data-i18n="action.import">Import</button>
         <input type="file" id="import-file" accept=".json" hidden>
@@ -72,20 +71,10 @@
         <input type="text" id="drama-title" required data-i18n-placeholder="form.titlePlaceholder" placeholder="e.g. Solo Leveling Season 2" maxlength="100" autocomplete="off">
       </label>
 
-      <div class="lookup-section">
-        <button type="button" class="btn btn-ghost lookup-btn" id="lookup-btn" data-i18n="lookup.search">Look up episodes</button>
-        <div class="lookup-results hidden" id="lookup-results"></div>
-        <p class="lookup-hint" id="lookup-hint" data-i18n="lookup.hint">Search Bangumi & AniList for episode counts (great for donghua)</p>
-      </div>
-
       <div class="form-row">
         <label>
           <span data-i18n="form.current">Current episode</span>
           <input type="number" id="drama-current" min="0" value="0" required>
-        </label>
-        <label>
-          <span data-i18n="form.total">Total episodes</span>
-          <input type="number" id="drama-total" min="1" data-i18n-placeholder="form.totalPlaceholder" placeholder="Leave blank if unknown">
         </label>
       </div>
 
@@ -139,7 +128,6 @@
 
   <script src="config.js"></script>
   <script src="i18n.js"></script>
-  <script src="lookup.js"></script>
   <script src="sync.js"></script>
   <script src="app.js"></script>
 </body>
