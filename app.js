@@ -7,6 +7,7 @@ let currentSort = loadSort();
 let searchQuery = '';
 let syncDebounceTimer = null;
 let lastSyncTime = null;
+let isRefreshingEpisodes = false;
 
 const dramaListEl = document.getElementById('drama-list');
 const emptyStateEl = document.getElementById('empty-state');
@@ -110,12 +111,53 @@ async function saveSyncSettings(e) {
   await performSync();
 }
 
+function setRefreshStatus(message) {
+  syncStatusEl.textContent = message;
+  syncDotEl.className = 'sync-dot syncing';
+}
+
+async function refreshAllEpisodeCounts() {
+  if (!dramas.length || isRefreshingEpisodes) return;
+  isRefreshingEpisodes = true;
+
+  const withMeta = dramas.filter((d) => d.metaId);
+  const withoutMeta = dramas.filter((d) => !d.metaId);
+  const queue = [...withMeta, ...withoutMeta];
+  let changed = 0;
+
+  for (let i = 0; i < queue.length; i++) {
+    const drama = queue[i];
+    setRefreshStatus(t('lookup.refreshProgress', { current: i + 1, total: queue.length }));
+
+    try {
+      if (await Lookup.refreshDrama(drama)) changed++;
+    } catch {
+      /* skip failed lookup */
+    }
+
+    await Lookup.delay(drama.metaId ? 250 : 600);
+  }
+
+  if (changed > 0) {
+    localStorage.setItem(STORAGE_KEY, JSON.stringify(dramas));
+    scheduleSync();
+    render();
+  }
+
+  setRefreshStatus(changed > 0
+    ? t('lookup.refreshDone', { count: changed })
+    : t('lookup.refreshNone'));
+
+  syncDotEl.className = 'sync-dot synced';
+  isRefreshingEpisodes = false;
+}
+
 async function initApp() {
   I18n.init();
 
   SyncManager.onStatusChange((status, messageKey, params) => {
     if (status === 'synced') lastSyncTime = new Date();
-    updateSyncUI(status, messageKey, params);
+    if (!isRefreshingEpisodes) updateSyncUI(status, messageKey, params);
   });
 
   if (SyncManager.isConfigured() && SyncManager.hasSyncCode()) {
@@ -128,6 +170,7 @@ async function initApp() {
   }
 
   render();
+  refreshAllEpisodeCounts();
 }
 
 function generateId() {

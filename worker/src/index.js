@@ -18,8 +18,15 @@ export default {
     if (url.pathname === '/search' && request.method === 'GET') {
       const q = (url.searchParams.get('q') || '').trim();
       if (q.length < 2) return json({ results: [] });
-      const results = await searchMedia(q);
+      const results = await searchBangumi(q);
       return json({ results });
+    }
+
+    const bgmMatch = url.pathname.match(/^\/subject\/bgm\/(\d+)$/);
+    if (bgmMatch && request.method === 'GET') {
+      const subject = await fetchBgmSubject(bgmMatch[1]);
+      if (!subject) return json({ error: 'Not Found' }, 404);
+      return json(subject);
     }
 
     const match = url.pathname.match(SYNC_ID_PATTERN);
@@ -62,10 +69,6 @@ export default {
   },
 };
 
-async function searchMedia(keyword) {
-  return searchBangumi(keyword);
-}
-
 async function searchBangumi(keyword) {
   try {
     const searchUrl = `https://api.bgm.tv/search/subject/${encodeURIComponent(keyword)}?type=2&max_results=8`;
@@ -79,31 +82,41 @@ async function searchBangumi(keyword) {
 
     const details = await Promise.all(
       list.map(async (item) => {
-        try {
-          const res = await fetch(`https://api.bgm.tv/v0/subjects/${item.id}`, {
-            headers: { 'User-Agent': BGM_UA },
-          });
-          if (!res.ok) return null;
-          const sub = await res.json();
-          const title = sub.name_cn || sub.name || item.name_cn || item.name;
-          const eps = sub.eps ?? sub.total_episodes ?? null;
-          return {
-            id: `bgm:${sub.id}`,
-            source: 'bangumi',
-            title,
-            totalEpisodes: eps > 0 ? eps : null,
-            airing: !eps || eps === 0,
-            sourceLabel: 'Bangumi',
-          };
-        } catch {
-          return null;
-        }
+        const subject = await fetchBgmSubject(item.id);
+        if (!subject) return null;
+        return {
+          id: `bgm:${item.id}`,
+          source: 'bangumi',
+          title: subject.title,
+          totalEpisodes: subject.totalEpisodes,
+          airing: subject.airing,
+          sourceLabel: 'Bangumi',
+        };
       }),
     );
 
     return details.filter(Boolean);
   } catch {
     return [];
+  }
+}
+
+async function fetchBgmSubject(id) {
+  try {
+    const res = await fetch(`https://api.bgm.tv/v0/subjects/${id}`, {
+      headers: { 'User-Agent': BGM_UA },
+    });
+    if (!res.ok) return null;
+    const sub = await res.json();
+    const title = sub.name_cn || sub.name || '';
+    const eps = sub.eps ?? sub.total_episodes ?? null;
+    return {
+      title,
+      totalEpisodes: eps > 0 ? eps : null,
+      airing: !eps || eps === 0,
+    };
+  } catch {
+    return null;
   }
 }
 

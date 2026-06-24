@@ -64,6 +64,109 @@ const Lookup = {
     return this.dedupeResults([...anilist, ...bangumi]).slice(0, 10);
   },
 
+  normalizeTitle(title) {
+    return title.toLowerCase().replace(/\s+/g, '').replace(/[·・]/g, '');
+  },
+
+  pickBestMatch(results, dramaTitle) {
+    if (!results.length) return null;
+    const norm = this.normalizeTitle(dramaTitle);
+    return results.find((r) => this.normalizeTitle(r.title) === norm)
+      || results.find((r) => {
+        const rt = this.normalizeTitle(r.title);
+        return rt.includes(norm) || norm.includes(rt);
+      })
+      || results[0];
+  },
+
+  async fetchAnilistById(id) {
+    const queryGql = `
+      query ($id: Int) {
+        Media(id: $id, type: ANIME) {
+          id
+          title { native romaji english }
+          episodes
+          status
+        }
+      }
+    `;
+    const res = await fetch('https://graphql.anilist.co', {
+      method: 'POST',
+      headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify({ query: queryGql, variables: { id: parseInt(id, 10) } }),
+    });
+    if (!res.ok) return null;
+    const data = await res.json();
+    const m = data?.data?.Media;
+    if (!m) return null;
+    return {
+      id: `anilist:${m.id}`,
+      source: 'anilist',
+      title: m.title.native || m.title.romaji || m.title.english || '',
+      totalEpisodes: m.episodes || null,
+      airing: m.status === 'RELEASING' || m.status === 'NOT_YET_RELEASED',
+      suggestedStatus: m.status === 'FINISHED' ? 'completed' : 'watching',
+      sourceLabel: 'AniList',
+    };
+  },
+
+  async fetchBangumiById(id) {
+    const base = this.apiBase();
+    if (!base || base.includes('YOUR_SUBDOMAIN')) return null;
+    try {
+      const res = await fetch(`${base}/subject/bgm/${id}`);
+      if (!res.ok) return null;
+      const sub = await res.json();
+      return {
+        id: `bgm:${id}`,
+        source: 'bangumi',
+        title: sub.title,
+        totalEpisodes: sub.totalEpisodes,
+        airing: sub.airing,
+        sourceLabel: 'Bangumi',
+      };
+    } catch {
+      return null;
+    }
+  },
+
+  async fetchByMeta(metaId) {
+    if (!metaId) return null;
+    if (metaId.startsWith('anilist:')) return this.fetchAnilistById(metaId.slice(8));
+    if (metaId.startsWith('bgm:')) return this.fetchBangumiById(metaId.slice(4));
+    return null;
+  },
+
+  async refreshDrama(drama) {
+    const hadMeta = !!drama.metaId;
+    let meta;
+
+    if (drama.metaId) {
+      meta = await this.fetchByMeta(drama.metaId);
+    } else {
+      const results = await this.search(drama.title);
+      meta = this.pickBestMatch(results, drama.title);
+      if (meta) {
+        drama.metaId = meta.id;
+        drama.metaSource = meta.source;
+      }
+    }
+
+    let changed = !hadMeta && !!drama.metaId;
+
+    if (meta?.totalEpisodes && meta.totalEpisodes !== drama.totalEpisodes) {
+      drama.totalEpisodes = meta.totalEpisodes;
+      drama.updatedAt = Date.now();
+      changed = true;
+    }
+
+    return changed;
+  },
+
+  delay(ms) {
+    return new Promise((resolve) => setTimeout(resolve, ms));
+  },
+
   dedupeResults(results) {
     const seen = new Set();
     const out = [];
