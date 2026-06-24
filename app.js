@@ -1,7 +1,9 @@
 const STORAGE_KEY = 'drama-track-data';
+const SORT_KEY = 'drama-track-sort';
 
 let dramas = loadData();
 let currentFilter = 'all';
+let currentSort = loadSort();
 let searchQuery = '';
 let syncDebounceTimer = null;
 let lastSyncTime = null;
@@ -15,6 +17,16 @@ const searchInput = document.getElementById('search');
 const syncModal = document.getElementById('sync-modal');
 const syncStatusEl = document.getElementById('sync-status');
 const syncDotEl = document.getElementById('sync-dot');
+
+function loadSort() {
+  const saved = localStorage.getItem(SORT_KEY);
+  return saved === 'alpha' ? 'alpha' : 'updated';
+}
+
+function saveSort(sort) {
+  currentSort = sort;
+  localStorage.setItem(SORT_KEY, sort);
+}
 
 function loadData() {
   try {
@@ -123,13 +135,19 @@ function generateId() {
 }
 
 function getFilteredDramas() {
+  const locale = I18n.getLang() === 'zh' ? 'zh-CN' : 'en';
   return dramas
     .filter((d) => {
       if (currentFilter !== 'all' && d.status !== currentFilter) return false;
       if (searchQuery && !d.title.toLowerCase().includes(searchQuery.toLowerCase())) return false;
       return true;
     })
-    .sort((a, b) => b.updatedAt - a.updatedAt);
+    .sort((a, b) => {
+      if (currentSort === 'alpha') {
+        return a.title.localeCompare(b.title, locale, { sensitivity: 'base' });
+      }
+      return (b.updatedAt || 0) - (a.updatedAt || 0);
+    });
 }
 
 function calcProgress(drama) {
@@ -371,7 +389,14 @@ function importData(file) {
 function onLangChange() {
   I18n.applyStatic();
   updateSyncUI(SyncManager.status, SyncManager.messageKey, SyncManager.messageParams);
+  syncSortTabsUI();
   render();
+}
+
+function syncSortTabsUI() {
+  document.querySelectorAll('#sort-tabs .tab').forEach((tab) => {
+    tab.classList.toggle('active', tab.dataset.sort === currentSort);
+  });
 }
 
 document.getElementById('lang-toggle').addEventListener('click', () => I18n.toggleLang());
@@ -400,9 +425,17 @@ searchInput.addEventListener('input', (e) => {
 document.getElementById('filter-tabs').addEventListener('click', (e) => {
   const tab = e.target.closest('.tab');
   if (!tab) return;
-  document.querySelectorAll('.tab').forEach((el) => el.classList.remove('active'));
+  document.querySelectorAll('#filter-tabs .tab').forEach((el) => el.classList.remove('active'));
   tab.classList.add('active');
   currentFilter = tab.dataset.filter;
+  render();
+});
+
+document.getElementById('sort-tabs').addEventListener('click', (e) => {
+  const tab = e.target.closest('.tab');
+  if (!tab) return;
+  saveSort(tab.dataset.sort);
+  syncSortTabsUI();
   render();
 });
 
@@ -445,3 +478,4 @@ document.addEventListener('visibilitychange', () => {
 });
 
 initApp();
+syncSortTabsUI();

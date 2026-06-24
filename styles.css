@@ -221,6 +221,19 @@ body {
   flex-wrap: wrap;
 }
 
+.sort-tabs {
+  display: flex;
+  align-items: center;
+  gap: 0.5rem;
+  flex-wrap: wrap;
+}
+
+.sort-label {
+  font-size: 0.8rem;
+  color: var(--text-muted);
+  margin-right: 0.125rem;
+}
+
 .tab {
   padding: 0.4rem 0.875rem;
   border-radius: 999px;
