@@ -32,10 +32,32 @@ function saveSort(sort) {
 function loadData() {
   try {
     const raw = localStorage.getItem(STORAGE_KEY);
-    return raw ? JSON.parse(raw) : [];
+    const data = raw ? JSON.parse(raw) : [];
+    return data.map(migrateDrama);
   } catch {
     return [];
   }
+}
+
+function migrateDrama(drama) {
+  const d = { ...drama };
+  if (d.status === 'completed') d.archived = true;
+  else if (d.archived === undefined) d.archived = false;
+  else if (d.status !== 'completed') d.archived = false;
+  return d;
+}
+
+function applyArchiveRules(drama) {
+  if (drama.status === 'completed') {
+    drama.archived = true;
+  } else {
+    drama.archived = false;
+  }
+  return drama;
+}
+
+function isActive(drama) {
+  return !drama.archived;
 }
 
 function saveData() {
@@ -161,7 +183,7 @@ async function initApp() {
   });
 
   if (SyncManager.isConfigured() && SyncManager.hasSyncCode()) {
-    dramas = await SyncManager.sync(dramas);
+    dramas = (await SyncManager.sync(dramas)).map(migrateDrama);
     localStorage.setItem(STORAGE_KEY, JSON.stringify(dramas));
   } else if (SyncManager.isConfigured()) {
     SyncManager.setStatus('idle', 'sync.setupHint');
@@ -170,6 +192,13 @@ async function initApp() {
   }
 
   render();
+  // Migrate existing completed shows into archive on first load after update
+  const needsArchiveMigrate = dramas.some((d) => d.status === 'completed' && !d.archived);
+  if (needsArchiveMigrate) {
+    dramas.forEach((d) => applyArchiveRules(d));
+    localStorage.setItem(STORAGE_KEY, JSON.stringify(dramas));
+    render();
+  }
   refreshAllEpisodeCounts();
 }
 
@@ -181,7 +210,12 @@ function getFilteredDramas() {
   const locale = I18n.getLang() === 'zh' ? 'zh-CN' : 'en';
   return dramas
     .filter((d) => {
-      if (currentFilter !== 'all' && d.status !== currentFilter) return false;
+      if (currentFilter === 'archive') {
+        if (!d.archived) return false;
+      } else {
+        if (d.archived) return false;
+        if (currentFilter !== 'all' && d.status !== currentFilter) return false;
+      }
       if (searchQuery && !d.title.toLowerCase().includes(searchQuery.toLowerCase())) return false;
       return true;
     })
@@ -199,13 +233,14 @@ function calcProgress(drama) {
 }
 
 function renderStats() {
-  const watching = dramas.filter((d) => d.status === 'watching').length;
-  const completed = dramas.filter((d) => d.status === 'completed').length;
+  const active = dramas.filter(isActive);
+  const watching = active.filter((d) => d.status === 'watching').length;
+  const archived = dramas.filter((d) => d.archived).length;
   const totalEpisodes = dramas.reduce((sum, d) => sum + (d.currentEpisode || 0), 0);
 
   statsEl.innerHTML = `
     <div class="stat-card">
-      <div class="value">${dramas.length}</div>
+      <div class="value">${active.length}</div>
       <div class="label">${t('stats.total')}</div>
     </div>
     <div class="stat-card">
@@ -213,8 +248,8 @@ function renderStats() {
       <div class="label">${t('stats.watching')}</div>
     </div>
     <div class="stat-card">
-      <div class="value">${completed}</div>
-      <div class="label">${t('stats.completed')}</div>
+      <div class="value">${archived}</div>
+      <div class="label">${t('stats.archived')}</div>
     </div>
     <div class="stat-card">
       <div class="value">${totalEpisodes}</div>
@@ -237,8 +272,17 @@ function renderDramaCard(drama) {
     ? `<div class="drama-notes">${escapeHtml(drama.notes)}</div>`
     : '';
 
+  const episodeControls = drama.archived
+    ? `<button type="button" class="btn btn-ghost btn-sm restore-btn" data-action="restore">${t('card.restore')}</button>`
+    : `
+        <div class="episode-controls">
+          <button class="btn-icon" data-action="decrease" title="${t('card.prev')}">−</button>
+          <span class="episode-label">${t('card.adjust')}</span>
+          <button class="btn-icon" data-action="increase" title="${t('card.next')}">+</button>
+        </div>`;
+
   return `
-    <article class="drama-card" data-id="${drama.id}">
+    <article class="drama-card${drama.archived ? ' archived' : ''}" data-id="${drama.id}">
       <div class="drama-card-header">
         <h3 class="drama-title">${escapeHtml(drama.title)}</h3>
         <span class="drama-status-badge status-${drama.status}">${t(`status.${drama.status}`)}</span>
@@ -255,11 +299,7 @@ function renderDramaCard(drama) {
       </div>
       ${notes}
       <div class="drama-actions">
-        <div class="episode-controls">
-          <button class="btn-icon" data-action="decrease" title="${t('card.prev')}">−</button>
-          <span class="episode-label">${t('card.adjust')}</span>
-          <button class="btn-icon" data-action="increase" title="${t('card.next')}">+</button>
-        </div>
+        ${episodeControls}
         <button class="btn-icon" data-action="edit" title="${t('card.edit')}">✎</button>
         <button class="btn-icon danger" data-action="delete" title="${t('card.delete')}">✕</button>
       </div>
@@ -280,7 +320,8 @@ function render() {
   emptyStateEl.classList.add('hidden');
 
   if (filtered.length === 0) {
-    dramaListEl.innerHTML = `<div class="empty-state"><p>${t('list.noMatch')}</p></div>`;
+    const msg = currentFilter === 'archive' ? t('list.archiveEmpty') : t('list.noMatch');
+    dramaListEl.innerHTML = `<div class="empty-state"><p>${msg}</p></div>`;
     return;
   }
 
@@ -391,9 +432,9 @@ function saveDrama(e) {
 
   if (id) {
     const idx = dramas.findIndex((d) => d.id === id);
-    if (idx !== -1) dramas[idx] = { ...dramas[idx], ...data };
+    if (idx !== -1) dramas[idx] = applyArchiveRules({ ...dramas[idx], ...data });
   } else {
-    dramas.push({ id: generateId(), ...data });
+    dramas.push(applyArchiveRules({ id: generateId(), ...data }));
   }
 
   saveData();
@@ -413,8 +454,20 @@ function changeEpisode(id, delta) {
 
   if (drama.totalEpisodes && next >= drama.totalEpisodes) {
     drama.status = 'completed';
+    applyArchiveRules(drama);
   }
 
+  saveData();
+  render();
+}
+
+function restoreDrama(id) {
+  const drama = dramas.find((d) => d.id === id);
+  if (!drama) return;
+
+  drama.status = 'watching';
+  drama.archived = false;
+  drama.updatedAt = Date.now();
   saveData();
   render();
 }
@@ -450,7 +503,7 @@ function importData(file) {
       if (!valid) throw new Error('invalid');
 
       if (confirm(t('import.confirm', { count: imported.length }))) {
-        dramas = imported.map((d) => ({
+        dramas = imported.map((d) => applyArchiveRules({
           id: d.id || generateId(),
           title: d.title,
           currentEpisode: d.currentEpisode,
@@ -458,11 +511,13 @@ function importData(file) {
           status: d.status || 'watching',
           notes: d.notes || '',
           updatedAt: d.updatedAt || Date.now(),
+          metaSource: d.metaSource || null,
+          metaId: d.metaId || null,
         }));
       } else {
         const existingIds = new Set(dramas.map((d) => d.id));
         imported.forEach((d) => {
-          dramas.push({
+          dramas.push(applyArchiveRules({
             id: d.id && !existingIds.has(d.id) ? d.id : generateId(),
             title: d.title,
             currentEpisode: d.currentEpisode,
@@ -470,7 +525,9 @@ function importData(file) {
             status: d.status || 'watching',
             notes: d.notes || '',
             updatedAt: d.updatedAt || Date.now(),
-          });
+            metaSource: d.metaSource || null,
+            metaId: d.metaId || null,
+          }));
         });
       }
 
@@ -561,6 +618,7 @@ dramaListEl.addEventListener('click', (e) => {
   const action = btn.dataset.action;
   if (action === 'increase') changeEpisode(id, 1);
   else if (action === 'decrease') changeEpisode(id, -1);
+  else if (action === 'restore') restoreDrama(id);
   else if (action === 'edit') {
     const drama = dramas.find((d) => d.id === id);
     if (drama) openModal(drama);

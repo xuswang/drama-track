@@ -439,6 +439,20 @@ body {
   color: var(--accent);
 }
 
+.drama-card.archived {
+  opacity: 0.85;
+}
+
+.drama-card.archived .progress-fill {
+  background: linear-gradient(90deg, #6b7280, #9ca3af);
+}
+
+.restore-btn {
+  margin-right: auto;
+  font-size: 0.8rem;
+  padding: 0.4rem 0.75rem;
+}
+
 .status-completed {
   background: rgba(74, 222, 128, 0.15);
   color: var(--success);
