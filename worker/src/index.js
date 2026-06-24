@@ -78,7 +78,7 @@ async function searchBangumi(keyword) {
     if (!searchRes.ok) return [];
 
     const searchData = await searchRes.json();
-    const list = (searchData.list || []).slice(0, 6);
+    const list = (searchData.list || []).slice(0, 4);
 
     const details = await Promise.all(
       list.map(async (item) => {

@@ -142,28 +142,37 @@ async function refreshAllEpisodeCounts() {
   if (!dramas.length || isRefreshingEpisodes) return;
   isRefreshingEpisodes = true;
 
-  const withMeta = dramas.filter((d) => d.metaId);
-  const withoutMeta = dramas.filter((d) => !d.metaId);
-  const queue = [...withMeta, ...withoutMeta];
+  const needsRefresh = dramas.filter((d) => !d.totalEpisodes);
+  const queue = needsRefresh.length ? needsRefresh : dramas;
   let changed = 0;
+  let pendingSave = false;
 
   for (let i = 0; i < queue.length; i++) {
     const drama = queue[i];
     setRefreshStatus(t('lookup.refreshProgress', { current: i + 1, total: queue.length }));
 
     try {
-      if (await Lookup.refreshDrama(drama)) changed++;
+      if (await Lookup.refreshDrama(drama)) {
+        changed++;
+        pendingSave = true;
+        render();
+      }
     } catch {
       /* skip failed lookup */
     }
 
-    await Lookup.delay(drama.metaId ? 250 : 600);
+    if (pendingSave && (changed % 5 === 0 || i === queue.length - 1)) {
+      localStorage.setItem(STORAGE_KEY, JSON.stringify(dramas));
+      scheduleSync();
+      pendingSave = false;
+    }
+
+    await Lookup.delay(350);
   }
 
-  if (changed > 0) {
+  if (pendingSave) {
     localStorage.setItem(STORAGE_KEY, JSON.stringify(dramas));
     scheduleSync();
-    render();
   }
 
   setRefreshStatus(changed > 0
@@ -575,6 +584,7 @@ document.getElementById('empty-add-btn').addEventListener('click', () => openMod
 document.getElementById('cancel-btn').addEventListener('click', closeModal);
 form.addEventListener('submit', saveDrama);
 
+document.getElementById('refresh-eps-btn').addEventListener('click', () => refreshAllEpisodeCounts());
 document.getElementById('export-btn').addEventListener('click', exportData);
 document.getElementById('import-btn').addEventListener('click', () => {
   document.getElementById('import-file').click();
