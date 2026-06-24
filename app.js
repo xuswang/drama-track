@@ -275,13 +275,8 @@ function closeModal() {
 function updateLookupHint() {
   const hint = document.getElementById('lookup-hint');
   const btn = document.getElementById('lookup-btn');
-  if (!Lookup.isAvailable()) {
-    hint.textContent = t('lookup.unavailable');
-    btn.disabled = true;
-  } else {
-    hint.textContent = t('lookup.hint');
-    btn.disabled = false;
-  }
+  hint.textContent = t('lookup.hint');
+  btn.disabled = false;
 }
 
 function applyLookupResult(result) {

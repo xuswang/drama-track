@@ -8,16 +8,72 @@ const Lookup = {
   },
 
   isAvailable() {
-    const url = this.apiBase();
-    return !!(url && !url.includes('YOUR_SUBDOMAIN'));
+    return true;
+  },
+
+  async searchAnilist(query) {
+    const queryGql = `
+      query ($search: String) {
+        Page(page: 1, perPage: 8) {
+          media(search: $search, type: ANIME, sort: SEARCH_MATCH) {
+            id
+            title { native romaji english }
+            episodes
+            status
+          }
+        }
+      }
+    `;
+    const res = await fetch('https://graphql.anilist.co', {
+      method: 'POST',
+      headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify({ query: queryGql, variables: { search: query } }),
+    });
+    if (!res.ok) return [];
+    const data = await res.json();
+    return (data?.data?.Page?.media || []).map((m) => ({
+      id: `anilist:${m.id}`,
+      source: 'anilist',
+      title: m.title.native || m.title.romaji || m.title.english || '',
+      totalEpisodes: m.episodes || null,
+      airing: m.status === 'RELEASING' || m.status === 'NOT_YET_RELEASED',
+      suggestedStatus: m.status === 'FINISHED' ? 'completed' : 'watching',
+      sourceLabel: 'AniList',
+    })).filter((r) => r.title);
+  },
+
+  async searchBangumi(query) {
+    const base = this.apiBase();
+    if (!base || base.includes('YOUR_SUBDOMAIN')) return [];
+    try {
+      const res = await fetch(`${base}/search?q=${encodeURIComponent(query)}`);
+      if (!res.ok) return [];
+      const data = await res.json();
+      return data.results || [];
+    } catch {
+      return [];
+    }
   },
 
   async search(query) {
-    if (!this.isAvailable() || query.length < 2) return [];
-    const res = await fetch(`${this.apiBase()}/search?q=${encodeURIComponent(query)}`);
-    if (!res.ok) throw new Error('search failed');
-    const data = await res.json();
-    return data.results || [];
+    if (query.length < 2) return [];
+    const [anilist, bangumi] = await Promise.all([
+      this.searchAnilist(query),
+      this.searchBangumi(query),
+    ]);
+    return this.dedupeResults([...anilist, ...bangumi]).slice(0, 10);
+  },
+
+  dedupeResults(results) {
+    const seen = new Set();
+    const out = [];
+    for (const r of results) {
+      const key = r.title.toLowerCase().replace(/\s+/g, '').replace(/[·・]/g, '');
+      if (!key || seen.has(key)) continue;
+      seen.add(key);
+      out.push(r);
+    }
+    return out;
   },
 
   formatEpisodes(result) {

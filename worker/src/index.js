@@ -63,11 +63,7 @@ export default {
 };
 
 async function searchMedia(keyword) {
-  const [bgm, anilist] = await Promise.all([
-    searchBangumi(keyword),
-    searchAnilist(keyword),
-  ]);
-  return dedupeResults([...bgm, ...anilist]).slice(0, 10);
+  return searchBangumi(keyword);
 }
 
 async function searchBangumi(keyword) {
@@ -75,7 +71,6 @@ async function searchBangumi(keyword) {
     const searchUrl = `https://api.bgm.tv/search/subject/${encodeURIComponent(keyword)}?type=2&max_results=8`;
     const searchRes = await fetch(searchUrl, {
       headers: { 'User-Agent': BGM_UA },
-      signal: AbortSignal.timeout(12000),
     });
     if (!searchRes.ok) return [];
 
@@ -87,7 +82,6 @@ async function searchBangumi(keyword) {
         try {
           const res = await fetch(`https://api.bgm.tv/v0/subjects/${item.id}`, {
             headers: { 'User-Agent': BGM_UA },
-            signal: AbortSignal.timeout(8000),
           });
           if (!res.ok) return null;
           const sub = await res.json();
@@ -111,64 +105,6 @@ async function searchBangumi(keyword) {
   } catch {
     return [];
   }
-}
-
-async function searchAnilist(keyword) {
-  try {
-    const query = `
-      query ($search: String) {
-        Page(page: 1, perPage: 8) {
-          media(search: $search, type: ANIME, sort: SEARCH_MATCH) {
-            id
-            title { native romaji english }
-            episodes
-            status
-          }
-        }
-      }
-    `;
-    const res = await fetch('https://graphql.anilist.co', {
-      method: 'POST',
-      headers: { 'Content-Type': 'application/json' },
-      body: JSON.stringify({ query, variables: { search: keyword } }),
-      signal: AbortSignal.timeout(8000),
-    });
-    if (!res.ok) return [];
-
-    const data = await res.json();
-    const media = data?.data?.Page?.media || [];
-
-    return media.map((m) => {
-      const title = m.title.native || m.title.romaji || m.title.english || '';
-      return {
-        id: `anilist:${m.id}`,
-        source: 'anilist',
-        title,
-        totalEpisodes: m.episodes || null,
-        airing: m.status === 'RELEASING' || m.status === 'NOT_YET_RELEASED',
-        suggestedStatus: m.status === 'FINISHED' ? 'completed' : 'watching',
-        sourceLabel: 'AniList',
-      };
-    }).filter((r) => r.title);
-  } catch {
-    return [];
-  }
-}
-
-function dedupeResults(results) {
-  const seen = new Set();
-  const out = [];
-  for (const r of results) {
-    const key = normalizeTitle(r.title);
-    if (!key || seen.has(key)) continue;
-    seen.add(key);
-    out.push(r);
-  }
-  return out;
-}
-
-function normalizeTitle(title) {
-  return title.toLowerCase().replace(/\s+/g, '').replace(/[·・]/g, '');
 }
 
 function json(data, status = 200) {
