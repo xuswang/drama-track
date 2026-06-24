@@ -1,0 +1,104 @@
+# Drama Track
+
+A lightweight web app to track which episode you're on for TV shows, anime, and dramas. Works offline locally, with optional encrypted cross-device sync via Cloudflare.
+
+**Live demo:** https://drama-track.pages.dev
+
+## Features
+
+- Add, edit, and delete shows
+- One-tap +1 / −1 episode controls
+- Progress bar with percentage
+- Filter by status: Watching / Completed / On hold
+- Search by title
+- Export / import JSON backup
+- **Cross-device sync** (AES-encrypted, Cloudflare Workers + KV)
+- **English & Chinese UI** with language preference saved in browser
+
+## Quick start
+
+### Use the hosted version
+
+Open https://drama-track.pages.dev, tap **Sync**, and set a passphrase. Use the same passphrase on every device.
+
+### Run locally
+
+```bash
+git clone https://github.com/YOUR_USERNAME/drama-track.git
+cd drama-track
+python3 -m http.server 8080
+```
+
+Visit http://localhost:8080
+
+> Sync requires HTTP (not `file://`). Deploy to Cloudflare Pages for the best experience on mobile.
+
+## Self-hosting sync (optional)
+
+### 1. Deploy the Cloudflare Worker
+
+```bash
+npm install -g wrangler
+wrangler login
+
+cd worker
+npm install
+wrangler kv namespace create DRAMA_SYNC
+# Copy the namespace id into worker/wrangler.toml
+npm run deploy
+```
+
+### 2. Configure the frontend
+
+```bash
+cp config.example.js config.js
+```
+
+Edit `config.js`:
+
+```javascript
+window.SYNC_CONFIG = {
+  apiUrl: 'https://drama-track-sync.your-subdomain.workers.dev',
+};
+```
+
+### 3. Deploy to Cloudflare Pages
+
+Push to GitHub and connect the repo in Cloudflare **Workers & Pages → Create → Pages**, or deploy manually:
+
+```bash
+wrangler pages deploy . --project-name=drama-track
+```
+
+## Language
+
+- Default: English (or Chinese if your browser language is Chinese)
+- Toggle **EN / 中文** in the top-right corner
+- Your choice is saved in `localStorage` and persists across visits
+
+## Data & privacy
+
+- **Local data** is stored in browser `localStorage`
+- **Cloud data** is AES-encrypted client-side before upload — the server only stores ciphertext
+- Your sync passphrase is the encryption key — don't lose it
+- Export JSON regularly as a backup
+
+## Project structure
+
+```
+drama-track/
+├── index.html
+├── app.js              # App logic
+├── i18n.js             # EN / ZH translations
+├── sync.js             # Cloud sync module
+├── config.example.js   # API config template
+└── worker/             # Cloudflare Worker backend
+```
+
+## License
+
+MIT — see [LICENSE](LICENSE)
+
+## Contributing
+
+Issues and pull requests welcome! Fork the repo, deploy your own Worker + Pages instance, and customize as you like.

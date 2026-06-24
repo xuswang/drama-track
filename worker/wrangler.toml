@@ -1,0 +1,10 @@
+name = "drama-track-sync"
+main = "src/index.js"
+compatibility_date = "2024-01-01"
+
+workers_dev = true
+
+[[kv_namespaces]]
+binding = "DRAMA_SYNC"
+id = "4ccad8d897fe4e908ee0aed0abee88a0"
+

@@ -1,0 +1,11 @@
+config.js
+.wrangler/
+worker/node_modules/
+worker/.wrangler/
+node_modules/
+.DS_Store
+
+# Personal data — do not commit
+dramas-import.json
+追番.txt
+追番.docx

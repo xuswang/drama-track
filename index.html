@@ -1,0 +1,134 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+  <meta charset="UTF-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1.0">
+  <title>Drama Track</title>
+  <link rel="stylesheet" href="styles.css">
+</head>
+<body>
+  <div class="app">
+    <header class="header">
+      <div class="header-top">
+        <div class="header-title-row">
+          <div>
+            <h1 data-i18n="app.title">Drama Track</h1>
+            <p class="subtitle" data-i18n="app.subtitle">Track which episode you are on</p>
+          </div>
+          <div class="header-actions">
+            <button class="btn btn-ghost lang-btn" id="lang-toggle" data-i18n-title="lang.switchTitle" data-i18n="lang.switch">中文</button>
+            <button class="btn btn-ghost sync-btn" id="sync-settings-btn" data-i18n-title="sync.btn">
+              <span class="sync-dot" id="sync-dot"></span>
+              <span data-i18n="sync.btn">Sync</span>
+            </button>
+          </div>
+        </div>
+        <p class="sync-status" id="sync-status"></p>
+      </div>
+      <div class="stats" id="stats"></div>
+    </header>
+
+    <section class="toolbar">
+      <div class="search-box">
+        <input type="search" id="search" data-i18n-placeholder="search.placeholder" placeholder="Search shows…" autocomplete="off">
+      </div>
+      <div class="filter-tabs" id="filter-tabs">
+        <button class="tab active" data-filter="all" data-i18n="filter.all">All</button>
+        <button class="tab" data-filter="watching" data-i18n="filter.watching">Watching</button>
+        <button class="tab" data-filter="completed" data-i18n="filter.completed">Completed</button>
+        <button class="tab" data-filter="on_hold" data-i18n="filter.onHold">On hold</button>
+      </div>
+      <div class="toolbar-actions">
+        <button class="btn btn-ghost" id="export-btn" data-i18n="action.export">Export</button>
+        <button class="btn btn-ghost" id="import-btn" data-i18n="action.import">Import</button>
+        <input type="file" id="import-file" accept=".json" hidden>
+        <button class="btn btn-primary" id="add-btn" data-i18n="action.add">+ Add show</button>
+      </div>
+    </section>
+
+    <main class="drama-list" id="drama-list"></main>
+
+    <div class="empty-state hidden" id="empty-state">
+      <div class="empty-icon">📺</div>
+      <h2 data-i18n="empty.title">No shows yet</h2>
+      <p data-i18n="empty.desc">Tap Add show to start tracking your progress</p>
+      <button class="btn btn-primary" id="empty-add-btn" data-i18n="empty.add">Add your first show</button>
+    </div>
+  </div>
+
+  <dialog class="modal" id="drama-modal">
+    <form class="modal-form" id="drama-form">
+      <h2 id="modal-title" data-i18n="modal.add">Add show</h2>
+      <input type="hidden" id="drama-id">
+
+      <label>
+        <span data-i18n="form.title">Title</span> <span class="required">*</span>
+        <input type="text" id="drama-title" required data-i18n-placeholder="form.titlePlaceholder" placeholder="e.g. Solo Leveling Season 2" maxlength="100">
+      </label>
+
+      <div class="form-row">
+        <label>
+          <span data-i18n="form.current">Current episode</span>
+          <input type="number" id="drama-current" min="0" value="0" required>
+        </label>
+        <label>
+          <span data-i18n="form.total">Total episodes</span>
+          <input type="number" id="drama-total" min="1" data-i18n-placeholder="form.totalPlaceholder" placeholder="Leave blank if unknown">
+        </label>
+      </div>
+
+      <label>
+        <span data-i18n="form.status">Status</span>
+        <select id="drama-status">
+          <option value="watching">Watching</option>
+          <option value="completed">Completed</option>
+          <option value="on_hold">On hold</option>
+        </select>
+      </label>
+
+      <label>
+        <span data-i18n="form.notes">Notes</span>
+        <textarea id="drama-notes" rows="2" data-i18n-placeholder="form.notesPlaceholder" placeholder="Platform, air schedule, etc. (optional)"></textarea>
+      </label>
+
+      <div class="modal-actions">
+        <button type="button" class="btn btn-ghost" id="cancel-btn" data-i18n="form.cancel">Cancel</button>
+        <button type="submit" class="btn btn-primary" data-i18n="form.save">Save</button>
+      </div>
+    </form>
+  </dialog>
+
+  <dialog class="modal" id="sync-modal">
+    <form class="modal-form" id="sync-form">
+      <h2 data-i18n="sync.title">Cross-device sync</h2>
+      <p class="sync-hint" data-i18n-html="sync.hint">
+        Enter the <strong>same sync passphrase</strong> on every device. Data is encrypted before upload — keep your passphrase safe.
+      </p>
+
+      <label>
+        <span data-i18n="sync.code">Sync passphrase</span>
+        <input type="password" id="sync-code" data-i18n-placeholder="sync.codePlaceholder" placeholder="Choose a passphrase you will remember" minlength="4" autocomplete="off">
+      </label>
+
+      <label class="checkbox-label">
+        <input type="checkbox" id="sync-show-code">
+        <span data-i18n="sync.showCode">Show passphrase</span>
+      </label>
+
+      <div class="sync-info" id="sync-info"></div>
+
+      <div class="modal-actions">
+        <button type="button" class="btn btn-ghost" id="sync-cancel-btn" data-i18n="sync.close">Close</button>
+        <button type="button" class="btn btn-ghost" id="sync-now-btn" data-i18n="sync.now">Sync now</button>
+        <button type="submit" class="btn btn-primary" data-i18n="sync.save">Save & sync</button>
+      </div>
+    </form>
+  </dialog>
+
+  <script src="config.example.js"></script>
+  <script src="config.js"></script>
+  <script src="i18n.js"></script>
+  <script src="sync.js"></script>
+  <script src="app.js"></script>
+</body>
+</html>
