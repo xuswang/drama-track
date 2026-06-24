@@ -167,25 +167,27 @@ function generateId() {
   return Date.now().toString(36) + Math.random().toString(36).slice(2, 7);
 }
 
-function getFilteredDramas() {
+function sortDramas(list) {
   const locale = I18n.getLang() === 'zh' ? 'zh-CN' : 'en';
-  return dramas
-    .filter((d) => {
-      if (currentFilter === 'archive') {
-        if (!d.archived) return false;
-      } else {
-        if (d.archived) return false;
-        if (currentFilter !== 'all' && d.status !== currentFilter) return false;
-      }
-      if (searchQuery && !d.title.toLowerCase().includes(searchQuery.toLowerCase())) return false;
-      return true;
-    })
-    .sort((a, b) => {
-      if (currentSort === 'alpha') {
-        return a.title.localeCompare(b.title, locale, { sensitivity: 'base' });
-      }
-      return (b.episodeUpdatedAt || 0) - (a.episodeUpdatedAt || 0);
-    });
+  return [...list].sort((a, b) => {
+    if (currentSort === 'alpha') {
+      return a.title.localeCompare(b.title, locale, { sensitivity: 'base' });
+    }
+    return (b.episodeUpdatedAt || 0) - (a.episodeUpdatedAt || 0);
+  });
+}
+
+function getFilteredDramas() {
+  return sortDramas(dramas.filter((d) => {
+    if (currentFilter === 'archive') {
+      if (!d.archived) return false;
+    } else {
+      if (d.archived) return false;
+      if (currentFilter !== 'all' && d.status !== currentFilter) return false;
+    }
+    if (searchQuery && !d.title.toLowerCase().includes(searchQuery.toLowerCase())) return false;
+    return true;
+  }));
 }
 
 function renderDramaCard(drama) {
@@ -367,14 +369,39 @@ function deleteDrama(id) {
   render();
 }
 
-function exportData() {
-  const blob = new Blob([JSON.stringify(dramas, null, 2)], { type: 'application/json' });
+function formatDramaDocLine(drama) {
+  if (drama.status === 'completed') {
+    return `${drama.title} ${t('export.completed')}`;
+  }
+  return `${drama.title} ${drama.currentEpisode}`;
+}
+
+function downloadFile(content, mimeType, filename) {
+  const blob = new Blob([content], { type: mimeType });
   const url = URL.createObjectURL(blob);
   const a = document.createElement('a');
   a.href = url;
-  a.download = t('export.filename', { date: new Date().toISOString().slice(0, 10) });
+  a.download = filename;
   a.click();
   URL.revokeObjectURL(url);
+}
+
+function exportData() {
+  downloadFile(
+    JSON.stringify(dramas, null, 2),
+    'application/json',
+    t('export.filename', { date: new Date().toISOString().slice(0, 10) }),
+  );
+}
+
+function exportDocument() {
+  const lines = sortDramas(dramas).map(formatDramaDocLine);
+  const content = `\uFEFF${lines.join('\n')}\n`;
+  downloadFile(
+    content,
+    'text/plain;charset=utf-8',
+    t('export.docFilename', { date: new Date().toISOString().slice(0, 10) }),
+  );
 }
 
 function importData(file) {
@@ -445,6 +472,7 @@ document.getElementById('cancel-btn').addEventListener('click', closeModal);
 form.addEventListener('submit', saveDrama);
 
 document.getElementById('export-btn').addEventListener('click', exportData);
+document.getElementById('export-doc-btn').addEventListener('click', exportDocument);
 document.getElementById('import-btn').addEventListener('click', () => {
   document.getElementById('import-file').click();
 });
