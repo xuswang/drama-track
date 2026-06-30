@@ -1,5 +1,6 @@
 const STORAGE_KEY = 'drama-track-data';
 const SORT_KEY = 'drama-track-sort';
+const EPISODE_SORT_DELAY_MS = 3000;
 
 let dramas = loadData();
 let currentFilter = 'all';
@@ -7,6 +8,7 @@ let currentSort = loadSort();
 let searchQuery = '';
 let syncDebounceTimer = null;
 let lastSyncTime = null;
+const episodeSortDebounceTimers = new Map();
 
 const dramaListEl = document.getElementById('drama-list');
 const emptyStateEl = document.getElementById('empty-state');
@@ -314,6 +316,7 @@ function saveDrama(e) {
   };
 
   if (id) {
+    clearEpisodeSortDebounce(id);
     const idx = dramas.findIndex((d) => d.id === id);
     if (idx !== -1) {
       const existing = dramas[idx];
@@ -332,6 +335,31 @@ function saveDrama(e) {
   render();
 }
 
+function clearEpisodeSortDebounce(id) {
+  const timer = episodeSortDebounceTimers.get(id);
+  if (!timer) return;
+  clearTimeout(timer);
+  episodeSortDebounceTimers.delete(id);
+}
+
+function scheduleEpisodeSortUpdate(id) {
+  clearEpisodeSortDebounce(id);
+  episodeSortDebounceTimers.set(id, setTimeout(() => {
+    episodeSortDebounceTimers.delete(id);
+    const drama = dramas.find((d) => d.id === id);
+    if (!drama) return;
+    drama.episodeUpdatedAt = Date.now();
+    saveData();
+    render();
+  }, EPISODE_SORT_DELAY_MS));
+}
+
+function updateCardEpisodeDisplay(id, episode) {
+  const countEl = dramaListEl.querySelector(`[data-id="${id}"] .episode-count`);
+  if (countEl) countEl.textContent = t('card.episodeCount', { n: episode });
+  renderStats();
+}
+
 function changeEpisode(id, delta) {
   const drama = dramas.find((d) => d.id === id);
   if (!drama) return;
@@ -340,12 +368,10 @@ function changeEpisode(id, delta) {
   if (next === drama.currentEpisode) return;
 
   drama.currentEpisode = next;
-  const now = Date.now();
-  drama.updatedAt = now;
-  drama.episodeUpdatedAt = now;
-
+  drama.updatedAt = Date.now();
+  scheduleEpisodeSortUpdate(id);
   saveData();
-  render();
+  updateCardEpisodeDisplay(id, next);
 }
 
 function restoreDrama(id) {
@@ -364,6 +390,7 @@ function deleteDrama(id) {
   if (!drama) return;
   if (!confirm(t('confirm.delete', { title: drama.title }))) return;
 
+  clearEpisodeSortDebounce(id);
   dramas = dramas.filter((d) => d.id !== id);
   saveData();
   render();
