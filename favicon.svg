@@ -1,0 +1,8 @@
+<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 32 32" role="img" aria-label="Drama Track">
+  <rect width="32" height="32" rx="8" fill="#14141a"/>
+  <rect x="5" y="7" width="22" height="18" rx="4" fill="#1a1a22" stroke="#e85d4c" stroke-width="1.5"/>
+  <path d="M14 11.5v9l7.5-4.5z" fill="#e85d4c"/>
+  <rect x="8" y="24" width="6" height="1.5" rx=".75" fill="#e85d4c" opacity=".9"/>
+  <rect x="15" y="24" width="4" height="1.5" rx=".75" fill="#8b8798" opacity=".6"/>
+  <rect x="20" y="24" width="4" height="1.5" rx=".75" fill="#8b8798" opacity=".35"/>
+</svg>
