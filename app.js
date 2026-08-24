@@ -1,6 +1,8 @@
 const STORAGE_KEY = 'drama-track-data';
 const SORT_KEY = 'drama-track-sort';
 const EPISODE_SORT_DELAY_MS = 3000;
+const STALE_ON_HOLD_MS = 30 * 24 * 60 * 60 * 1000;
+const STATUS_RECHECK_MS = 7 * 24 * 60 * 60 * 1000;
 
 let dramas = loadData();
 let currentFilter = 'all';
@@ -8,6 +10,7 @@ let currentSort = loadSort();
 let searchQuery = '';
 let syncDebounceTimer = null;
 let lastSyncTime = null;
+let isAutoMaintaining = false;
 const episodeSortDebounceTimers = new Map();
 
 const dramaListEl = document.getElementById('drama-list');
@@ -46,6 +49,8 @@ function migrateDrama(drama) {
   delete d.metaId;
   delete d.metaSource;
   if (d.episodeUpdatedAt == null) d.episodeUpdatedAt = d.updatedAt || 0;
+  if (d.statusCheckedAt == null) d.statusCheckedAt = 0;
+  if (d.status === 'on_hold' && d.onHoldEpisode == null) d.onHoldEpisode = d.currentEpisode;
   if (d.status === 'completed') d.archived = true;
   else if (d.archived === undefined) d.archived = false;
   else if (d.status !== 'completed') d.archived = false;
@@ -143,7 +148,7 @@ async function initApp() {
 
   SyncManager.onStatusChange((status, messageKey, params) => {
     if (status === 'synced') lastSyncTime = new Date();
-    updateSyncUI(status, messageKey, params);
+    if (!isAutoMaintaining) updateSyncUI(status, messageKey, params);
   });
 
   if (SyncManager.isConfigured() && SyncManager.hasSyncCode()) {
@@ -163,6 +168,93 @@ async function initApp() {
     localStorage.setItem(STORAGE_KEY, JSON.stringify(dramas));
     render();
   }
+
+  if (applyStaleOnHold()) {
+    localStorage.setItem(STORAGE_KEY, JSON.stringify(dramas));
+    scheduleSync();
+    render();
+  }
+
+  runAutoMaintenance();
+}
+
+function applyStaleOnHold() {
+  const now = Date.now();
+  let changed = 0;
+
+  for (const drama of dramas) {
+    if (drama.status !== 'watching' || drama.archived) continue;
+    const lastEpisodeChange = drama.episodeUpdatedAt || 0;
+    if (!lastEpisodeChange || now - lastEpisodeChange < STALE_ON_HOLD_MS) continue;
+
+    drama.status = 'on_hold';
+    drama.onHoldEpisode = drama.currentEpisode;
+    drama.updatedAt = now;
+    changed++;
+  }
+
+  return changed;
+}
+
+function needsStatusCheck(drama) {
+  if (drama.status === 'completed' || drama.archived) return false;
+  if (!drama.statusCheckedAt) return true;
+  return Date.now() - drama.statusCheckedAt > STATUS_RECHECK_MS;
+}
+
+function setAutoMaintainStatus(message) {
+  syncStatusEl.textContent = message;
+  syncDotEl.className = 'sync-dot syncing';
+}
+
+async function runAutoMaintenance() {
+  if (!dramas.length || isAutoMaintaining) return;
+
+  const queue = dramas.filter((d) => (
+    (d.status === 'watching' || d.status === 'on_hold') && needsStatusCheck(d)
+  ));
+  if (!queue.length) return;
+
+  isAutoMaintaining = true;
+  let completedCount = 0;
+
+  for (let i = 0; i < queue.length; i++) {
+    const drama = queue[i];
+    setAutoMaintainStatus(t('auto.statusProgress', { current: i + 1, total: queue.length }));
+
+    try {
+      const result = await StatusLookup.checkDrama(drama);
+      drama.statusCheckedAt = Date.now();
+      if (result.metaId) drama.statusMetaId = result.metaId;
+
+      if (result.finished && drama.status !== 'completed') {
+        drama.status = 'completed';
+        drama.updatedAt = Date.now();
+        applyArchiveRules(drama);
+        completedCount++;
+        render();
+      }
+    } catch {
+      drama.statusCheckedAt = Date.now();
+    }
+
+    if ((i + 1) % 10 === 0 || i === queue.length - 1) {
+      localStorage.setItem(STORAGE_KEY, JSON.stringify(dramas));
+      scheduleSync();
+    }
+
+    await StatusLookup.delay(400);
+  }
+
+  localStorage.setItem(STORAGE_KEY, JSON.stringify(dramas));
+  scheduleSync();
+  render();
+
+  setAutoMaintainStatus(completedCount > 0
+    ? t('auto.statusDone', { count: completedCount })
+    : t('auto.statusNone'));
+  syncDotEl.className = 'sync-dot synced';
+  isAutoMaintaining = false;
 }
 
 function generateId() {
@@ -295,6 +387,21 @@ function closeModal() {
   form.reset();
 }
 
+function resumeWatchingOnEpisodeChange(drama) {
+  drama.status = 'watching';
+  applyArchiveRules(drama);
+}
+
+function applyStatusAfterEpisodeChange(drama, nextEpisode) {
+  if (drama.onHoldEpisode != null && nextEpisode === drama.onHoldEpisode) {
+    drama.status = 'on_hold';
+    applyArchiveRules(drama);
+    return false;
+  }
+  if (drama.status === 'on_hold') resumeWatchingOnEpisodeChange(drama);
+  return true;
+}
+
 function saveDrama(e) {
   e.preventDefault();
 
@@ -320,13 +427,33 @@ function saveDrama(e) {
     const idx = dramas.findIndex((d) => d.id === id);
     if (idx !== -1) {
       const existing = dramas[idx];
-      data.episodeUpdatedAt = existing.currentEpisode !== currentEpisode
-        ? now
-        : (existing.episodeUpdatedAt || existing.updatedAt || 0);
-      dramas[idx] = applyArchiveRules({ ...existing, ...data });
+      const episodeChanged = existing.currentEpisode !== currentEpisode;
+
+      if (episodeChanged) {
+        if (existing.onHoldEpisode != null && currentEpisode === existing.onHoldEpisode) {
+          data.status = 'on_hold';
+          data.onHoldEpisode = currentEpisode;
+          data.episodeUpdatedAt = existing.episodeUpdatedAt || existing.updatedAt || 0;
+        } else {
+          data.status = 'watching';
+          data.episodeUpdatedAt = now;
+        }
+      } else {
+        data.episodeUpdatedAt = existing.episodeUpdatedAt || existing.updatedAt || 0;
+        if (status === 'on_hold') data.onHoldEpisode = currentEpisode;
+      }
+
+      const merged = { ...existing, ...data };
+      if (merged.status === 'on_hold') {
+        merged.onHoldEpisode = currentEpisode;
+      } else if (!episodeChanged && status !== 'on_hold') {
+        delete merged.onHoldEpisode;
+      }
+      dramas[idx] = applyArchiveRules(merged);
     }
   } else {
     data.episodeUpdatedAt = currentEpisode > 0 ? now : 0;
+    if (status === 'on_hold') data.onHoldEpisode = currentEpisode;
     dramas.push(applyArchiveRules({ id: generateId(), ...data }));
   }
 
@@ -355,8 +482,22 @@ function scheduleEpisodeSortUpdate(id) {
 }
 
 function updateCardEpisodeDisplay(id, episode) {
-  const countEl = dramaListEl.querySelector(`[data-id="${id}"] .episode-count`);
+  const card = dramaListEl.querySelector(`[data-id="${id}"]`);
+  if (!card) return;
+
+  const countEl = card.querySelector('.episode-count');
   if (countEl) countEl.textContent = t('card.episodeCount', { n: episode });
+
+  const drama = dramas.find((d) => d.id === id);
+  if (drama) {
+    const badge = card.querySelector('.drama-status-badge');
+    if (badge) {
+      badge.className = `drama-status-badge status-${drama.status}`;
+      badge.textContent = t(`status.${drama.status}`);
+    }
+    card.classList.toggle('archived', !!drama.archived);
+  }
+
   renderStats();
 }
 
@@ -367,9 +508,14 @@ function changeEpisode(id, delta) {
   const next = Math.max(0, drama.currentEpisode + delta);
   if (next === drama.currentEpisode) return;
 
+  clearEpisodeSortDebounce(id);
   drama.currentEpisode = next;
   drama.updatedAt = Date.now();
-  scheduleEpisodeSortUpdate(id);
+
+  if (applyStatusAfterEpisodeChange(drama, next)) {
+    scheduleEpisodeSortUpdate(id);
+  }
+
   saveData();
   updateCardEpisodeDisplay(id, next);
 }
@@ -380,6 +526,7 @@ function restoreDrama(id) {
 
   drama.status = 'watching';
   drama.archived = false;
+  delete drama.onHoldEpisode;
   drama.updatedAt = Date.now();
   saveData();
   render();

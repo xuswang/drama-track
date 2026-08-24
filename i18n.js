@@ -77,6 +77,9 @@ const MESSAGES = {
     'lang.switch': '中文',
     'lang.switchTitle': 'Switch to Chinese',
     'footer.copyright': '© 2026 Oscar Wang',
+    'auto.statusProgress': 'Checking airing status {current}/{total}…',
+    'auto.statusDone': 'Marked {count} show(s) as completed',
+    'auto.statusNone': 'Airing status is up to date',
   },
   zh: {
     'app.title': '追番记录',
@@ -154,6 +157,9 @@ const MESSAGES = {
     'lang.switch': 'EN',
     'lang.switchTitle': 'Switch to English',
     'footer.copyright': '© 2026 Oscar Wang',
+    'auto.statusProgress': '正在查询完结状态 {current}/{total}…',
+    'auto.statusDone': '已自动标记 {count} 部为已完结',
+    'auto.statusNone': '完结状态已是最新',
   },
 };
 
