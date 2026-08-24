@@ -76,6 +76,7 @@ const MESSAGES = {
     'export.completed': 'Completed',
     'lang.switch': '中文',
     'lang.switchTitle': 'Switch to Chinese',
+    'footer.copyright': '© 2026 Oscar Wang',
   },
   zh: {
     'app.title': '追番记录',
@@ -152,6 +153,7 @@ const MESSAGES = {
     'export.completed': '完结',
     'lang.switch': 'EN',
     'lang.switchTitle': 'Switch to English',
+    'footer.copyright': '© 2026 Oscar Wang',
   },
 };
 
