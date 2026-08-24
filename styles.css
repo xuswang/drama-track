@@ -16,13 +16,8 @@
 }
 
 html {
+  overflow-y: scroll;
   scrollbar-gutter: stable;
-}
-
-@supports not (scrollbar-gutter: stable) {
-  html {
-    overflow-y: scroll;
-  }
 }
 
 * {
@@ -37,6 +32,16 @@ body {
   color: var(--text);
   min-height: 100vh;
   line-height: 1.5;
+  overflow-x: hidden;
+}
+
+body::before {
+  content: '';
+  position: fixed;
+  inset: 0;
+  z-index: -1;
+  pointer-events: none;
+  background-color: var(--bg);
   background-image:
     radial-gradient(ellipse 80% 50% at 50% -20%, rgba(232, 93, 76, 0.12), transparent),
     radial-gradient(ellipse 60% 40% at 100% 100%, rgba(100, 80, 200, 0.08), transparent);
