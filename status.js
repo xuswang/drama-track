@@ -334,6 +334,10 @@ const StatusLookup = {
   },
 
   async checkDrama(drama) {
+    if (drama?.status === 'completed' || drama?.networkFinished === true) {
+      return { finished: true, metaId: drama.statusMetaId || null, cached: true };
+    }
+
     let meta = drama.statusMetaId ? await this.fetchByMeta(drama.statusMetaId) : null;
     if (meta && !this.isSeasonCompatible(drama.title, meta)) meta = null;
     if (meta && this.scoreMatch(drama.title, meta) < 55) meta = null;

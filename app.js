@@ -2,7 +2,7 @@ const STORAGE_KEY = 'drama-track-data';
 const SORT_KEY = 'drama-track-sort';
 const EPISODE_SORT_DELAY_MS = 3000;
 const STALE_ON_HOLD_MS = 30 * 24 * 60 * 60 * 1000;
-const STATUS_RECHECK_MS = 7 * 24 * 60 * 60 * 1000;
+const AIRING_RECHECK_MS = 7 * 24 * 60 * 60 * 1000;
 
 let dramas = loadData();
 let currentFilter = 'all';
@@ -50,6 +50,12 @@ function migrateDrama(drama) {
   delete d.metaSource;
   if (d.episodeUpdatedAt == null) d.episodeUpdatedAt = d.updatedAt || 0;
   if (d.statusCheckedAt == null) d.statusCheckedAt = 0;
+  if (d.status === 'completed') {
+    d.networkFinished = true;
+    d.statusCheckedAt = d.statusCheckedAt || Date.now();
+  } else if (d.statusCheckedAt > 0 && d.networkFinished === undefined) {
+    d.networkFinished = false;
+  }
   if (d.status === 'on_hold' && d.onHoldEpisode == null) d.onHoldEpisode = d.currentEpisode;
   if (d.status === 'completed') d.archived = true;
   else if (d.archived === undefined) d.archived = false;
@@ -175,6 +181,12 @@ async function initApp() {
     render();
   }
 
+  if (applyCachedNetworkStatus()) {
+    localStorage.setItem(STORAGE_KEY, JSON.stringify(dramas));
+    scheduleSync();
+    render();
+  }
+
   runAutoMaintenance();
 }
 
@@ -196,10 +208,32 @@ function applyStaleOnHold() {
   return changed;
 }
 
+function markCompleted(drama) {
+  drama.status = 'completed';
+  drama.networkFinished = true;
+  drama.statusCheckedAt = Date.now();
+  drama.updatedAt = Date.now();
+  applyArchiveRules(drama);
+}
+
+function applyCachedNetworkStatus() {
+  let changed = 0;
+  for (const drama of dramas) {
+    if (drama.networkFinished === true && drama.status !== 'completed') {
+      markCompleted(drama);
+      changed++;
+    }
+  }
+  return changed;
+}
+
 function needsStatusCheck(drama) {
-  if (drama.status === 'completed' || drama.archived) return false;
-  if (!drama.statusCheckedAt) return true;
-  return Date.now() - drama.statusCheckedAt > STATUS_RECHECK_MS;
+  if (drama.status === 'completed' || drama.networkFinished === true) return false;
+  if (drama.networkFinished === false) {
+    if (!drama.statusCheckedAt) return true;
+    return Date.now() - drama.statusCheckedAt > AIRING_RECHECK_MS;
+  }
+  return true;
 }
 
 function setAutoMaintainStatus(message) {
@@ -223,19 +257,22 @@ async function runAutoMaintenance() {
     setAutoMaintainStatus(t('auto.statusProgress', { current: i + 1, total: queue.length }));
 
     try {
+      if (drama.status === 'completed') continue;
+
       const result = await StatusLookup.checkDrama(drama);
-      drama.statusCheckedAt = Date.now();
-      if (result.metaId) drama.statusMetaId = result.metaId;
+      if (result.metaId) {
+        drama.statusMetaId = result.metaId;
+        drama.networkFinished = result.finished;
+        drama.statusCheckedAt = Date.now();
+      }
 
       if (result.finished && drama.status !== 'completed') {
-        drama.status = 'completed';
-        drama.updatedAt = Date.now();
-        applyArchiveRules(drama);
+        markCompleted(drama);
         completedCount++;
         render();
       }
     } catch {
-      drama.statusCheckedAt = Date.now();
+      /* skip failed lookup — retry on next visit */
     }
 
     if ((i + 1) % 10 === 0 || i === queue.length - 1) {
@@ -449,11 +486,19 @@ function saveDrama(e) {
       } else if (!episodeChanged && status !== 'on_hold') {
         delete merged.onHoldEpisode;
       }
+      if (merged.status === 'completed') {
+        merged.statusCheckedAt = now;
+        merged.networkFinished = true;
+      }
       dramas[idx] = applyArchiveRules(merged);
     }
   } else {
     data.episodeUpdatedAt = currentEpisode > 0 ? now : 0;
     if (status === 'on_hold') data.onHoldEpisode = currentEpisode;
+    if (status === 'completed') {
+      data.statusCheckedAt = now;
+      data.networkFinished = true;
+    }
     dramas.push(applyArchiveRules({ id: generateId(), ...data }));
   }
 
@@ -589,7 +634,7 @@ function importData(file) {
       if (!valid) throw new Error('invalid');
 
       if (confirm(t('import.confirm', { count: imported.length }))) {
-        dramas = imported.map((d) => applyArchiveRules({
+        dramas = imported.map((d) => migrateDrama(applyArchiveRules({
           id: d.id || generateId(),
           title: d.title,
           currentEpisode: d.currentEpisode,
@@ -597,11 +642,15 @@ function importData(file) {
           notes: d.notes || '',
           updatedAt: d.updatedAt || Date.now(),
           episodeUpdatedAt: d.episodeUpdatedAt ?? d.updatedAt ?? 0,
-        }));
+          statusMetaId: d.statusMetaId || null,
+          statusCheckedAt: d.statusCheckedAt || 0,
+          networkFinished: d.networkFinished,
+          onHoldEpisode: d.onHoldEpisode,
+        })));
       } else {
         const existingIds = new Set(dramas.map((d) => d.id));
         imported.forEach((d) => {
-          dramas.push(applyArchiveRules({
+          dramas.push(migrateDrama(applyArchiveRules({
             id: d.id && !existingIds.has(d.id) ? d.id : generateId(),
             title: d.title,
             currentEpisode: d.currentEpisode,
@@ -609,7 +658,11 @@ function importData(file) {
             notes: d.notes || '',
             updatedAt: d.updatedAt || Date.now(),
             episodeUpdatedAt: d.episodeUpdatedAt ?? d.updatedAt ?? 0,
-          }));
+            statusMetaId: d.statusMetaId || null,
+            statusCheckedAt: d.statusCheckedAt || 0,
+            networkFinished: d.networkFinished,
+            onHoldEpisode: d.onHoldEpisode,
+          })));
         });
       }
 
