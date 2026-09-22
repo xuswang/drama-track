@@ -33,6 +33,7 @@ const MESSAGES = {
     'sort.label': 'Sort',
     'sort.updated': 'Recent episode change',
     'sort.alpha': 'A–Z',
+    'action.checkStatus': 'Check completed',
     'action.export': 'Export JSON',
     'action.exportDoc': 'Export list',
     'action.import': 'Import',
@@ -79,7 +80,7 @@ const MESSAGES = {
     'footer.copyright': '© 2026 Oscar Wang',
     'auto.statusProgress': 'Checking airing status {current}/{total}…',
     'auto.statusDone': 'Marked {count} show(s) as completed',
-    'auto.statusNone': 'Airing status is up to date',
+    'auto.statusNone': 'No shows need a status update',
   },
   zh: {
     'app.title': '追番记录',
@@ -113,6 +114,7 @@ const MESSAGES = {
     'sort.label': '排序',
     'sort.updated': '最近改集数',
     'sort.alpha': '字母顺序',
+    'action.checkStatus': '检查完结',
     'action.export': '导出 JSON',
     'action.exportDoc': '导出追番',
     'action.import': '导入',
@@ -158,8 +160,8 @@ const MESSAGES = {
     'lang.switchTitle': 'Switch to English',
     'footer.copyright': '© 2026 Oscar Wang',
     'auto.statusProgress': '正在查询完结状态 {current}/{total}…',
-    'auto.statusDone': '已自动标记 {count} 部为已完结',
-    'auto.statusNone': '完结状态已是最新',
+    'auto.statusDone': '已标记 {count} 部为已完结',
+    'auto.statusNone': '没有需要更新的剧',
   },
 };
 

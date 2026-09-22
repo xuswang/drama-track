@@ -10,7 +10,7 @@ let currentSort = loadSort();
 let searchQuery = '';
 let syncDebounceTimer = null;
 let lastSyncTime = null;
-let isAutoMaintaining = false;
+let isCheckingStatus = false;
 const episodeSortDebounceTimers = new Map();
 
 const dramaListEl = document.getElementById('drama-list');
@@ -88,6 +88,7 @@ function scheduleSync() {
 }
 
 async function performSync() {
+  if (isCheckingStatus) return;
   const merged = await SyncManager.sync(dramas);
   if (merged !== dramas) {
     dramas = merged.map(migrateDrama);
@@ -154,7 +155,7 @@ async function initApp() {
 
   SyncManager.onStatusChange((status, messageKey, params) => {
     if (status === 'synced') lastSyncTime = new Date();
-    if (!isAutoMaintaining) updateSyncUI(status, messageKey, params);
+    if (!isCheckingStatus) updateSyncUI(status, messageKey, params);
   });
 
   if (SyncManager.isConfigured() && SyncManager.hasSyncCode()) {
@@ -186,8 +187,6 @@ async function initApp() {
     scheduleSync();
     render();
   }
-
-  runAutoMaintenance();
 }
 
 function applyStaleOnHold() {
@@ -236,62 +235,70 @@ function needsStatusCheck(drama) {
   return true;
 }
 
-function setAutoMaintainStatus(message) {
+function setStatusCheckMessage(message) {
   syncStatusEl.textContent = message;
   syncDotEl.className = 'sync-dot syncing';
 }
 
-async function runAutoMaintenance() {
-  if (!dramas.length || isAutoMaintaining) return;
+async function checkAiringStatus() {
+  if (!dramas.length || isCheckingStatus) return;
 
-  const queue = dramas.filter((d) => (
-    (d.status === 'watching' || d.status === 'on_hold') && needsStatusCheck(d)
-  ));
-  if (!queue.length) return;
+  const queueIds = dramas
+    .filter((d) => (d.status === 'watching' || d.status === 'on_hold') && needsStatusCheck(d))
+    .map((d) => d.id);
 
-  isAutoMaintaining = true;
+  if (!queueIds.length) {
+    setStatusCheckMessage(t('auto.statusNone'));
+    syncDotEl.className = 'sync-dot synced';
+    return;
+  }
+
+  isCheckingStatus = true;
+  clearTimeout(syncDebounceTimer);
   let completedCount = 0;
 
-  for (let i = 0; i < queue.length; i++) {
-    const drama = queue[i];
-    setAutoMaintainStatus(t('auto.statusProgress', { current: i + 1, total: queue.length }));
+  for (let i = 0; i < queueIds.length; i++) {
+    const drama = dramas.find((d) => d.id === queueIds[i]);
+    if (!drama || drama.status === 'completed') continue;
+
+    setStatusCheckMessage(t('auto.statusProgress', { current: i + 1, total: queueIds.length }));
 
     try {
-      if (drama.status === 'completed') continue;
-
       const result = await StatusLookup.checkDrama(drama);
+      const live = dramas.find((d) => d.id === queueIds[i]);
+      if (!live || live.status === 'completed') continue;
+
       if (result.metaId) {
-        drama.statusMetaId = result.metaId;
-        drama.networkFinished = result.finished;
-        drama.statusCheckedAt = Date.now();
+        live.statusMetaId = result.metaId;
+        live.networkFinished = result.finished;
+        live.statusCheckedAt = Date.now();
       }
 
-      if (result.finished && drama.status !== 'completed') {
-        markCompleted(drama);
+      if (result.finished) {
+        markCompleted(live);
         completedCount++;
         render();
       }
     } catch {
-      /* skip failed lookup — retry on next visit */
+      /* skip failed lookup */
     }
 
-    if ((i + 1) % 10 === 0 || i === queue.length - 1) {
+    if ((i + 1) % 10 === 0 || i === queueIds.length - 1) {
       localStorage.setItem(STORAGE_KEY, JSON.stringify(dramas));
-      scheduleSync();
     }
 
     await StatusLookup.delay(400);
   }
 
   localStorage.setItem(STORAGE_KEY, JSON.stringify(dramas));
-  scheduleSync();
   render();
 
-  setAutoMaintainStatus(completedCount > 0
+  setStatusCheckMessage(completedCount > 0
     ? t('auto.statusDone', { count: completedCount })
     : t('auto.statusNone'));
   syncDotEl.className = 'sync-dot synced';
-  isAutoMaintaining = false;
+  isCheckingStatus = false;
+  scheduleSync();
 }
 
 function generateId() {
@@ -698,6 +705,7 @@ document.getElementById('empty-add-btn').addEventListener('click', () => openMod
 document.getElementById('cancel-btn').addEventListener('click', closeModal);
 form.addEventListener('submit', saveDrama);
 
+document.getElementById('check-status-btn').addEventListener('click', () => checkAiringStatus());
 document.getElementById('export-btn').addEventListener('click', exportData);
 document.getElementById('export-doc-btn').addEventListener('click', exportDocument);
 document.getElementById('import-btn').addEventListener('click', () => {
