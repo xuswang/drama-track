@@ -37,7 +37,7 @@ function loadData() {
   try {
     const raw = localStorage.getItem(STORAGE_KEY);
     const data = raw ? JSON.parse(raw) : [];
-    return data.map(migrateDrama);
+    return SyncManager.dedupeByTitle(data.map(migrateDrama));
   } catch {
     return [];
   }
@@ -89,9 +89,9 @@ function scheduleSync() {
 
 async function performSync() {
   if (isCheckingStatus) return;
-  const merged = await SyncManager.sync(dramas);
-  if (merged !== dramas) {
-    dramas = merged.map(migrateDrama);
+  const merged = SyncManager.dedupeByTitle((await SyncManager.sync(dramas)).map(migrateDrama));
+  if (JSON.stringify(merged) !== JSON.stringify(dramas)) {
+    dramas = merged;
     localStorage.setItem(STORAGE_KEY, JSON.stringify(dramas));
     render();
   }
@@ -159,12 +159,14 @@ async function initApp() {
   });
 
   if (SyncManager.isConfigured() && SyncManager.hasSyncCode()) {
-    dramas = (await SyncManager.sync(dramas)).map(migrateDrama);
+    dramas = SyncManager.dedupeByTitle((await SyncManager.sync(dramas)).map(migrateDrama));
     localStorage.setItem(STORAGE_KEY, JSON.stringify(dramas));
   } else if (SyncManager.isConfigured()) {
     SyncManager.setStatus('idle', 'sync.setupHint');
+    localStorage.setItem(STORAGE_KEY, JSON.stringify(dramas));
   } else {
     SyncManager.setStatus('offline', 'sync.offline');
+    localStorage.setItem(STORAGE_KEY, JSON.stringify(dramas));
   }
 
   render();
@@ -509,6 +511,16 @@ function saveDrama(e) {
     dramas.push(applyArchiveRules({ id: generateId(), ...data }));
   }
 
+  const beforeIds = dramas.map((d) => d.id).join('\0');
+  dramas = SyncManager.dedupeByTitle(dramas);
+  if (dramas.map((d) => d.id).join('\0') !== beforeIds) {
+    dramas.forEach((d) => {
+      if (SyncManager.normalizeTitle(d.title) === SyncManager.normalizeTitle(title)) {
+        d.updatedAt = now;
+      }
+    });
+  }
+
   saveData();
   closeModal();
   render();
@@ -673,6 +685,7 @@ function importData(file) {
         });
       }
 
+      dramas = SyncManager.dedupeByTitle(dramas);
       saveData();
       render();
       alert(t('import.success'));

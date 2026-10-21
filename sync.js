@@ -152,6 +152,36 @@ const SyncManager = {
     return updatedAt;
   },
 
+  normalizeTitle(title) {
+    return (title || '').trim().replace(/\s+/g, ' ').toLowerCase();
+  },
+
+  pickHigherEpisode(a, b) {
+    const episodeA = a.currentEpisode || 0;
+    const episodeB = b.currentEpisode || 0;
+    if (episodeA !== episodeB) return episodeA > episodeB ? a : b;
+    const timeA = a.episodeUpdatedAt || a.updatedAt || 0;
+    const timeB = b.episodeUpdatedAt || b.updatedAt || 0;
+    if (timeA !== timeB) return timeA >= timeB ? a : b;
+    return (a.updatedAt || 0) >= (b.updatedAt || 0) ? a : b;
+  },
+
+  dedupeByTitle(list) {
+    const order = [];
+    const byKey = new Map();
+    for (const drama of list || []) {
+      const key = this.normalizeTitle(drama.title) || `\0${drama.id}`;
+      const existing = byKey.get(key);
+      if (!existing) {
+        order.push(key);
+        byKey.set(key, drama);
+        continue;
+      }
+      byKey.set(key, this.pickHigherEpisode(existing, drama));
+    }
+    return order.map((key) => byKey.get(key));
+  },
+
   mergeDramas(local, remote) {
     const map = new Map();
     for (const d of [...(local || []), ...(remote || [])]) {
@@ -160,7 +190,7 @@ const SyncManager = {
         map.set(d.id, d);
       }
     }
-    return Array.from(map.values());
+    return this.dedupeByTitle(Array.from(map.values()));
   },
 
   async sync(localDramas) {
